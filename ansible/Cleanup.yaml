@@ -1,0 +1,48 @@
+---
+- name: Cleanup Project
+  hosts: webserver
+  tasks:
+    - name: Remove bookinfo Project
+      k8s:
+        state: absent
+        api_version: project.openshift.io/v1
+        kind: Project
+        name: bookinfo
+    - name: Remove istio-system Project
+      k8s:
+        state: absent
+        api_version: project.openshift.io/v1
+        kind: Project
+        name: istio-system
+    - name: Remove Service Mesh Subscription
+      k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: openshift-operators
+        name: servicemeshoperator
+    - name: Remove Jaeger Subscription
+      k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: openshift-operators
+        name: jaeger-product
+    - name: Remove Kiali Subscription
+      k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: openshift-operators
+        name: kiali-ossm
+    - name: Remove Elasticsearch Subscription
+      k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: openshift-operators
+        name: elasticsearch-operator
+    - name: Remove bookinfo Files
+      file:
+        path: bookinfo/
+        state: absent
