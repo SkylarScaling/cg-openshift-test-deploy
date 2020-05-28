@@ -1,0 +1,376 @@
+Deploying Service Mesh To OpenShift
+-----------------------------------
+
+Goals
+~~~~~
+* Set up the Red Hat® OpenShift® Service Mesh operator
+* Use the Red Hat OpenShift Service Mesh operator to deploy an application
+
+What does installing the Service Mesh involve?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+. Installing `Elasticsearch`, `Jaeger`, `Kiali`
+. Installing the `Service Mesh Operator`
+. Creating and managing a `ServiceMeshControlPlane` resource to deploy the Service Mesh control plane
+. Creating a `ServiceMeshMemberRoll` resource to specify the namespaces associated with the Service Mesh.
+
+Check to see if required operators are available on OperatorHub
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get packagemanifests {servicemeshoperator,kiali-ossm,jaeger-product,elasticsearch-operator} -n openshift-marketplace*
+NAME                     CATALOG             AGE
+servicemeshoperator      Red Hat Operators   30m
+kiali-ossm               Red Hat Operators   30m
+jaeger-product           Red Hat Operators   30m
+elasticsearch-operator   Red Hat Operators   30m
+
+Install Operators
+~~~~~~~~~~~~~~~~~
+
+Service Mesh
+^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ cat > service-mesh-subscription.yaml << EOF
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: servicemeshoperator
+  namespace: openshift-operators
+spec:
+  channel: "1.0"
+  name: servicemeshoperator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF*
+
+Jaegar
+^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ cat > jaeger-product-operator-subscription.yaml << EOF
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: jaeger-product
+  namespace: openshift-operators
+spec:
+  channel: stable
+  name: jaeger-product
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF*
+
+Kiali
+^^^^^
+[subs=+quotes]
+[source,bash]
+[rliang-redhat.com@clientvm 0 ~]$ cat > kiali-ossm-operator-subscription.yaml << EOF
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: kiali-ossm
+  namespace: openshift-operators
+spec:
+  channel: stable
+  name: kiali-ossm
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+Elastic Search
+^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+[rliang-redhat.com@clientvm 0 ~]$ cat > elasticsearch-operator-subscription.yaml << EOF
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: elasticsearch-operator
+  namespace: openshift-operators
+spec:
+  channel: "4.3"
+  name: elasticsearch-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+Apply configurations
+^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -f service-mesh-subscription.yaml*
+subscription.operators.coreos.com/servicemeshoperator created
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -f elasticsearch-operator-subscription.yaml*
+subscription.operators.coreos.com/elasticsearch-operator created
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -f jaeger-product-operator-subscription.yaml*
+subscription.operators.coreos.com/jaeger-product created
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -f kiali-ossm-operator-subscription.yaml*
+subscription.operators.coreos.com/kiali-ossm created
+
+Validate subscriptions
+^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get sub -n openshift-operators*
+NAME                     PACKAGE                  SOURCE             CHANNEL
+elasticsearch-operator   elasticsearch-operator   redhat-operators   4.3
+jaeger-product           jaeger-product           redhat-operators   stable
+kiali-ossm               kiali-ossm               redhat-operators   stable
+servicemeshoperator      servicemeshoperator      redhat-operators   1.0
+
+Service Mesh Control Plane (SMCP)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Create a namespace called istio-system where the Service Mesh control plane will be installed.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc adm new-project istio-system --display-name="Service Mesh System"*
+Created project istio-system
+
+Create the custom resource file
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ cat > istio-installation.yaml << EOF
+---
+apiVersion: maistra.io/v1
+kind: ServiceMeshControlPlane
+metadata:
+  name: basic-install
+  namespace: istio-system
+spec:
+  istio:
+    gateways:
+      istio-egressgateway:
+        autoscaleEnabled: false
+      istio-ingressgateway:
+        autoscaleEnabled: false
+    mixer:
+      policy:
+        autoscaleEnabled: false
+      telemetry:
+        autoscaleEnabled: false
+    pilot:
+      autoscaleEnabled: false
+      traceSampling: 100
+    kiali:
+      enabled: true
+    grafana:
+      enabled: true
+    tracing:
+      enabled: true
+      jaeger:
+        template: all-in-one
+EOF*
+
+Apply configurations
+^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -n istio-system -f istio-installation.yaml*
+servicemeshcontrolplane.maistra.io/basic-install created
+
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ watch -n2 oc get pods -n istio-system*
+Every 2.0s: oc get pods -n istio-system                                    Fri May 15 18:02:43 2020
+NAME                                      READY   STATUS    RESTARTS   AGE
+grafana-594c897f4b-lcksf                  2/2     Running   0          90s
+istio-citadel-6784798885-85rhq            1/1     Running   0          4m32s
+istio-egressgateway-b8d7d6fcf-2lzvp       1/1     Running   0          2m3s
+istio-galley-7549bb654b-tm668             1/1     Running   0          3m25s
+istio-ingressgateway-7f6fcf4bc9-69wld     1/1     Running   0          2m3s
+istio-pilot-75d4fdb54f-rxsdw 	          2/2     Running   0          2m24s
+istio-policy-7cb97db7c8-jjsrt             2/2     Running   0          3m2s
+istio-sidecar-injector-866fccd4d9-gnw6d   1/1     Running   0          112s
+istio-telemetry-6585f4479c-qzdcl          2/2     Running   0          3m2s
+jaeger-6d7759b577-nf87c                   2/2     Running   0          3m25s
+kiali-6df4b897bd-s9kpq                    1/1     Running   0          47s
+prometheus-fb77d6556-8blt2                2/2     Running   0          4m7s
+
+Verify that the control plane has been successfully installed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get smcp -n istio-system*
+NAME            READY   STATUS              TEMPLATE   VERSION   AGE
+basic-install   9/9     InstallSuccessful   default    v1.1      97m
+
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get deployment,pods -n istio-system*
+NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.extensions/grafana                  1/1     1            1           94m
+deployment.extensions/istio-citadel            1/1     1            1           97m
+deployment.extensions/istio-egressgateway      1/1     1            1           95m
+deployment.extensions/istio-galley             1/1     1            1           96m
+deployment.extensions/istio-ingressgateway     1/1     1            1           95m
+deployment.extensions/istio-pilot              1/1     1            1           95m
+deployment.extensions/istio-policy             1/1     1            1           96m
+deployment.extensions/istio-sidecar-injector   1/1     1            1           94m
+deployment.extensions/istio-telemetry          1/1     1            1           96m
+deployment.extensions/jaeger                   1/1     1            1           96m
+deployment.extensions/kiali                    1/1     1            1           93m
+deployment.extensions/prometheus               1/1     1            1           97m
+NAME                                          READY   STATUS    RESTARTS   AGE
+pod/grafana-594c897f4b-lcksf                  2/2     Running   0          94m
+pod/istio-citadel-6784798885-85rhq            1/1     Running   0          97m
+pod/istio-egressgateway-b8d7d6fcf-2lzvp       1/1     Running   0          95m
+pod/istio-galley-7549bb654b-tm668             1/1     Running   0          96m
+pod/istio-ingressgateway-7f6fcf4bc9-69wld     1/1     Running   0          95m
+pod/istio-pilot-75d4fdb54f-rxsdw              2/2     Running   0          95m
+pod/istio-policy-7cb97db7c8-jjsrt             2/2     Running   0          96m
+pod/istio-sidecar-injector-866fccd4d9-gnw6d   1/1     Running   0          94m
+pod/istio-telemetry-6585f4479c-qzdcl          2/2     Running   0          96m
+pod/jaeger-6d7759b577-nf87c                   2/2     Running   0          96m
+pod/kiali-6d555fb878-nscjc                    1/1     Running   0          9m1s
+pod/prometheus-fb77d6556-8blt2                2/2     Running   0          97m
+
+Get the URL of the Kiali web console
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get route kiali -n istio-system -o jsonpath='{"https://"}{.spec.host}{"\n"}'*
+https://kiali-istio-system.apps.cluster-77b0.77b0.sandbox1163.opentlc.com
+
+Service Mesh Member Roll
+^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ cat > service-mesh-member-roll-default.yaml << EOF
+---
+apiVersion: maistra.io/v1
+kind: ServiceMeshMemberRoll
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  members:
+    # a list of projects joined into the service mesh
+    - default
+EOF*
+
+Apply configurations
+^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -n istio-system -f service-mesh-member-roll-default.yaml*
+servicemeshmemberroll.maistra.io/default created
+
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get smmr -n istio-system*
+NAME      READY   STATUS       AGE
+default   1/1     Configured   46s
+
+Deploy sample application
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Setup
+^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ BOOKINFO_PROJECT=bookinfo && echo $BOOKINFO_PROJECT*
+bookinfo
+*[rliang-redhat.com@clientvm 0 ~]$ ISTIO_RELEASE=$(curl --silent https://api.github.com/repos/istio/istio/releases/latest |grep -Po '"tag_name": "\K.***?(?=")')* *&& echo $ISTIO_RELEASE*
+1.5.4
+
+Create a new project for your application
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc new-project $BOOKINFO_PROJECT*
+Now using project "bookinfo" on server "https://api.cluster-77b0.77b0.sandbox1163.opentlc.com:6443".
+
+Add project into service mesh member (or manually do this via `oc edit smmr -n istio-system`)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc get smmr default -n istio-system -o json | jq '.spec.members += ["'"$BOOKINFO_PROJECT"'"]' | oc apply -n istio-system -f -*
+servicemeshmemberroll.maistra.io/default configured
+
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 130 ~]$ oc apply -n $BOOKINFO_PROJECT -f https://raw.githubusercontent.com/istio/istio/$ISTIO_RELEASE/samples/bookinfo/platform/kube/bookinfo.yaml*
+service/details created
+serviceaccount/bookinfo-details created
+deployment.apps/details-v1 created
+service/ratings created
+serviceaccount/bookinfo-ratings created
+deployment.apps/ratings-v1 created
+service/reviews created
+serviceaccount/bookinfo-reviews created
+deployment.apps/reviews-v1 created
+deployment.apps/reviews-v2 created
+deployment.apps/reviews-v3 created
+service/productpage created
+serviceaccount/bookinfo-productpage created
+deployment.apps/productpage-v1 created
+
+Patch sidecar annotation into template in deployment objects
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+[subs=+quotes]
+[source, bash]
+*[rliang-redhat.com@clientvm 0 ~]$ for deployment in $(oc get deployments -o jsonpath='{.items[***].metadata.name}' -n $BOOKINFO_PROJECT);do
+    oc -n $BOOKINFO_PROJECT patch deployment $deployment -p '{"spec":{"template":{"metadata":{"annotations":{"sidecar.istio.io/inject": "true"}}}}}'
+done*
+deployment.extensions/details-v1 patched
+deployment.extensions/productpage-v1 patched
+deployment.extensions/ratings-v1 patched
+deployment.extensions/reviews-v1 patched
+deployment.extensions/reviews-v2 patched
+deployment.extensions/reviews-v3 patched
+
+Apply application gateway
+^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ oc apply -n $BOOKINFO_PROJECT -f https://raw.githubusercontent.com/istio/istio/$ISTIO_RELEASE/samples/bookinfo/networking/bookinfo-gateway.yaml*
+gateway.networking.istio.io/bookinfo-gateway created
+virtualservice.networking.istio.io/bookinfo created
+
+Get the URL of Ingress Gateway and test connectivity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ GATEWAY_URL=$(oc -n istio-system get route istio-ingressgateway -o jsonpath='{.spec.host}') && echo $GATEWAY_URL*
+istio-ingressgateway-istio-system.apps.cluster-77b0.77b0.sandbox1163.opentlc.com
+
+Confirm the app is accessible from outside the cluster
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*┌─rliang@Randys-MacBook-Pro in ~ at 12:16:28
+└─ while true; do sleep 1; curl -s http://${GATEWAY_URL}/productpage | grep -o "<title>.***</title>";done*
+<title>Simple Bookstore App</title>
+<title>Simple Bookstore App</title>
+<title>Simple Bookstore App</title>
+...
+
+Commands to obtain other URLs
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[subs=+quotes]
+[source,bash]
+*[rliang-redhat.com@clientvm 0 ~]$ KIALI_URL=$(oc -n istio-system get route kiali -o jsonpath='{.spec.host}') && echo "Kiali URL: https://$KIALI_URL"*
+Kiali URL: https://kiali-istio-system.apps.cluster-77b0.77b0.sandbox1163.opentlc.com
+*[rliang-redhat.com@clientvm 0 ~]$ JAEGER_URL=$(oc -n istio-system get route jaeger -o jsonpath='{.spec.host}') && echo "Jaeger URL: https://$JAEGER_URL"*
+Jaeger URL: https://jaeger-istio-system.apps.cluster-77b0.77b0.sandbox1163.opentlc.com
+*[rliang-redhat.com@clientvm 0 ~]$ GRAFANA_URL=$(oc -n istio-system get route grafana -o jsonpath='{.spec.host}') && echo "Grafana URL: https://$GRAFANA_URL"*
+Grafana URL: https://grafana-istio-system.apps.cluster-77b0.77b0.sandbox1163.opentlc.com
+
+TODO:
+^^^^
+* Deploy hello_world.py
+* Encrypt routes 
+* Template Ansible
+* Clean-up
+
+Useful Links
+~~~~~~~~~~~~
+* https://docs.openshift.com/container-platform/4.4/service_mesh/service_mesh_install/installing-ossm.html
