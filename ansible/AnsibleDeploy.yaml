@@ -5,5 +5,5 @@
   - include_tasks: ServiceMeshSub.yaml   
   - name: Wait for Istio to Finish Deployment
     pause:
-      minutes: 5   
+      minutes: 3   
   - include_tasks: BookinfoDeploy.yaml
