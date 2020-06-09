@@ -1,0 +1,9 @@
+---
+- name: Deploy Service Mesh and Example Application
+  hosts: webserver
+  tasks:
+  - include_tasks: service_mesh_deploy.yaml   
+  - name: Wait for Istio to Finish Deployment
+    pause:
+      minutes: 3   
+  - include_tasks: bookinfo_deploy.yaml

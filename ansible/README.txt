@@ -14,4 +14,4 @@ yum install python2-pip
 pip install openshift
 
 Execution command on localhost:
-ansible-playbook ServiceMeshSub.yaml -i hosts
+ansible-playbook ansible_deploy.yaml -i hosts
